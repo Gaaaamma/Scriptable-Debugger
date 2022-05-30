@@ -6,24 +6,28 @@
 void handleScriptPath(int argc, char* argv[], char* scriptPath);
 
 int main(int argc, char* argv[]){
+    int hasScript, hasExecutable=0;
     char scriptPath[100] = {};
     char executable[100] = {};
     if(argc > 1){
         handleScriptPath(argc,argv,scriptPath);
         if(strcmp(scriptPath,"") ==0){
             // No script -> argument is executable program path
+            hasExecutable = 1;
             strcat(executable,argv[argc-1]);
 
         }else{
             // Has script -> check if executable exist
+            hasScript = 1;
             if(strcmp(scriptPath,argv[argc-1]) !=0){
                 // executable exist
+                hasExecutable = 1;
                 strcat(executable, argv[argc-1]);
             }
         }
     }
-    printf("scriptPath: %s\n",scriptPath);
-    printf("executable file: %s\n",executable);
+    printf("scriptPath: %d %s\n",hasScript,scriptPath);
+    printf("executable file: %d %s\n",hasExecutable,executable);
 }
 
 
