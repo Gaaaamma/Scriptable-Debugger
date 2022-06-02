@@ -56,16 +56,25 @@ int main(int argc, char* argv[]){
     // if not loaded stage 
     while(stage == NOTLOADED){
         char input[INPUTSIZE] = {};
-        printf("** sdb> ");
+        printf("sdb> ");
         scanf("%s",input);
         
         // Parsing
         if(strncmp(input,"help",INPUTSIZE) == 0 || strncmp(input,"h",INPUTSIZE) ==0){
-            // help command 
             printf("%s",helpMsg);
 
-        }else if(strncmp(input,"exit",INPUTSIZE) == 0){
+        }else if(strncmp(input,"exit",INPUTSIZE) == 0 || strncmp(input,"q",INPUTSIZE) ==0){
             exit(0);
+
+        }else if(strncmp(input,"list",INPUTSIZE) == 0 || strncmp(input,"l",INPUTSIZE) ==0){
+
+
+        }else if(strncmp(input,"load",INPUTSIZE) == 0){
+
+            stage = LOADED;
+        }else{
+            printf("** Invalid command: %s\n",input);
+
         }
     }
 }
