@@ -8,6 +8,7 @@
 //******************************//
 #define INPUTSIZE 256
 char helpMsg[] = "** - break {instruction-address}: add a break point\n** - cont: continue execution\n** - delete {break-point-id}: remove a break point\n** - disasm addr: disassemble instructions in a file or a memory region\n** - dump addr: dump memory content\n** - exit: terminate the debugger\n** - get reg: get a single value from a register\n** - getregs: show registers\n** - help: show this message\n** - list: list break points\n** - load {path/to/a/program}: load a program\n** - run: run the program\n** - vmmap: show memory layout\n** - set reg val: get a single value to a register\n** - si: step into instruction\n** - start: start the program and stop at the first instruction\n";
+char delima[3] = " \n";
 typedef enum{
     NOTLOADED,
     LOADED,
@@ -25,8 +26,8 @@ void handleScriptPath(int argc, char* argv[], char* scriptPath);
 int main(int argc, char* argv[]){
     stage_t stage = NOTLOADED;
     int hasScript, hasExecutable=0;
-    char scriptPath[100] = {};
-    char executable[100] = {};
+    char scriptPath[INPUTSIZE] = {};
+    char executable[INPUTSIZE] = {};
     if(argc > 1){
         handleScriptPath(argc,argv,scriptPath);
         if(strcmp(scriptPath,"") ==0){
@@ -57,20 +58,25 @@ int main(int argc, char* argv[]){
     while(stage == NOTLOADED){
         char input[INPUTSIZE] = {};
         printf("sdb> ");
-        scanf("%s",input);
+        fgets(input,INPUTSIZE,stdin);
+        char *command = strtok(input, delima);
+
         
         // Parsing
-        if(strncmp(input,"help",INPUTSIZE) == 0 || strncmp(input,"h",INPUTSIZE) ==0){
+        if(strncmp(command,"help",INPUTSIZE) == 0 || strncmp(command,"h",INPUTSIZE) ==0){
             printf("%s",helpMsg);
 
-        }else if(strncmp(input,"exit",INPUTSIZE) == 0 || strncmp(input,"q",INPUTSIZE) ==0){
+        }else if(strncmp(command,"exit",INPUTSIZE) == 0 || strncmp(command,"q",INPUTSIZE) ==0){
             exit(0);
 
-        }else if(strncmp(input,"list",INPUTSIZE) == 0 || strncmp(input,"l",INPUTSIZE) ==0){
+        }else if(strncmp(command,"list",INPUTSIZE) == 0 || strncmp(command,"l",INPUTSIZE) ==0){
 
 
-        }else if(strncmp(input,"load",INPUTSIZE) == 0){
-
+        }else if(strncmp(command,"load",INPUTSIZE) == 0){
+            // keep spliting
+            command = strtok(NULL, delima);
+            strcat(executable, command);
+            printf("** executable file: %s\n",executable);
             stage = LOADED;
         }else{
             printf("** Invalid command: %s\n",input);
