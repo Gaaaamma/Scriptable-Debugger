@@ -112,7 +112,7 @@ int main(int argc, char* argv[]){
             exit(0);
 
         }else if(strncmp(command,"list",INPUTSIZE) == 0 || strncmp(command,"l",INPUTSIZE) ==0){
-
+            // TODO
 
         }else if(strncmp(command,"load",INPUTSIZE) == 0){
             // keep spliting
@@ -151,12 +151,35 @@ int main(int argc, char* argv[]){
             printf("** Invalid command: %s\n",input);
         }
     }
-    /*
+    
     // debugger keep working
     while(1){
         // LOADED stage
         while (stage == LOADED){
-        
+            char input[INPUTSIZE] = {};
+            printf("sdb> ");
+            fgets(input,INPUTSIZE,stdin);
+            char *command = strtok(input, delima);
+
+            // Parsing
+            if(strncmp(command,"help",INPUTSIZE) == 0 || strncmp(command,"h",INPUTSIZE) ==0){
+                printf("%s",helpMsg);
+
+            }else if(strncmp(command,"exit",INPUTSIZE) == 0 || strncmp(command,"q",INPUTSIZE) ==0){
+                exit(0);
+
+            }else if(strncmp(command,"list",INPUTSIZE) == 0 || strncmp(command,"l",INPUTSIZE) ==0){
+                // TODO
+
+            }else if(strncmp(command,"run",INPUTSIZE) == 0 || strncmp(command,"r",INPUTSIZE) ==0){
+                // TODO
+
+            }else if(strncmp(command,"start",INPUTSIZE) == 0){
+                printf("** pid %d\n", child);
+                stage = RUNNING;
+            }else{
+                printf("** Invalid command: %s\n",input);
+            }
         }
 
         // RUNNING stage
@@ -164,7 +187,6 @@ int main(int argc, char* argv[]){
 
         }
     }
-    */
 }
 
 //******************************//
