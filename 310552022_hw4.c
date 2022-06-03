@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -8,6 +9,7 @@
 #include <assert.h>
 #include <sys/user.h>
 #include <errno.h>
+#include <elf.h>
 
 //******************************//
 //        Global Define         //
@@ -40,6 +42,9 @@ int main(int argc, char* argv[]){
     struct user_regs_struct regs;
     unsigned char *ptr = (unsigned char *)&ret;
 
+    int elfFd = 0;
+    Elf64_Ehdr elfHeader;
+
     int hasScript, hasExecutable=0;
     char scriptPath[INPUTSIZE] = {};
     char executable[INPUTSIZE] = {};
@@ -67,6 +72,15 @@ int main(int argc, char* argv[]){
     
     // if hasExecutable -> load exe first 
     if(hasExecutable){
+        // preworking with executable path
+        char *findSlash = strstr(executable, "/");
+        if(findSlash == NULL){
+            // didn't find slash -> add "./" at front
+            memset(executable,0,INPUTSIZE);
+            strcat(executable,"./");
+            strcat(executable, argv[argc-1]);
+        }
+
         if ((child = fork()) < 0){
             errquit("fork");
         }
@@ -86,13 +100,11 @@ int main(int argc, char* argv[]){
             ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
 
             // Get child entry point and data
-            if ((rip = ptrace(PTRACE_PEEKUSER, child, ((unsigned char *)&regs.rip) - ((unsigned char *)&regs), 0)) != 0){
-                ret = ptrace(PTRACE_PEEKTEXT, child, rip, 0);
-            }else{
-                perror("ptrace(PTRACE_PEEKUSER)");
-            }
+            elfFd = open(executable, S_IRUSR);
+            read(elfFd, &elfHeader, sizeof(Elf64_Ehdr));
+            
             // Show relative infomation
-            printf("** program \'%s\' loaded. entry point 0x%llx\n", executable, rip);
+            printf("** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
         }
         stage = LOADED;
     }
@@ -118,6 +130,16 @@ int main(int argc, char* argv[]){
             // keep spliting
             command = strtok(NULL, delima);
             strcat(executable, command);
+
+            // preworking with executable path
+            char *findSlash = strstr(executable, "/");
+            if (findSlash == NULL){
+                // didn't find slash -> add "./" at front
+                memset(executable, 0, INPUTSIZE);
+                strcat(executable, "./");
+                strcat(executable, command);
+            }
+
             if ((child = fork()) < 0){
                 errquit("fork");
             }
@@ -129,6 +151,7 @@ int main(int argc, char* argv[]){
                 }
                 execlp(executable, executable, NULL);
                 errquit("execvp");
+
             }else{ // Parent
                 if (waitpid(child, &childStatus, 0) < 0){
                     errquit("waitpid");
@@ -137,13 +160,11 @@ int main(int argc, char* argv[]){
                 ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
 
                 // Get child entry point and data
-                if ((rip = ptrace(PTRACE_PEEKUSER, child, ((unsigned char *)&regs.rip) - ((unsigned char *)&regs), 0)) != 0){
-                    ret = ptrace(PTRACE_PEEKTEXT, child, rip, 0);
-                }else{
-                    perror("ptrace(PTRACE_PEEKUSER)");
-                }
+                elfFd = open(executable, S_IRUSR);
+                read(elfFd, &elfHeader, sizeof(Elf64_Ehdr));
+
                 // Show relative infomation
-                printf("** program \'%s\' loaded. entry point 0x%llx\n", executable, rip);
+                printf("** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
             }
             stage = LOADED;
 
