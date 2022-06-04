@@ -20,7 +20,8 @@ const char delima[3] = " \n";
 typedef enum{
     NOTLOADED,
     LOADED,
-    RUNNING
+    RUNNING,
+    START
 }stage_t;
 
 //******************************//
@@ -73,14 +74,6 @@ int main(int argc, char* argv[]){
     // if hasExecutable -> load exe first 
     if(hasExecutable){
         // preworking with executable path
-        char *findSlash = strstr(executable, "/");
-        if(findSlash == NULL){
-            // didn't find slash -> add "./" at front
-            memset(executable,0,INPUTSIZE);
-            strcat(executable,"./");
-            strcat(executable, argv[argc-1]);
-        }
-
         if ((child = fork()) < 0){
             errquit("fork");
         }
@@ -90,7 +83,7 @@ int main(int argc, char* argv[]){
                 errquit("ptrace");
             }
             execlp(executable, executable, NULL);
-            errquit("execvp");
+            errquit("execlp");
 
         }else{ // Parent
             if (waitpid(child, &childStatus, 0) < 0){
@@ -131,15 +124,6 @@ int main(int argc, char* argv[]){
             command = strtok(NULL, delima);
             strcat(executable, command);
 
-            // preworking with executable path
-            char *findSlash = strstr(executable, "/");
-            if (findSlash == NULL){
-                // didn't find slash -> add "./" at front
-                memset(executable, 0, INPUTSIZE);
-                strcat(executable, "./");
-                strcat(executable, command);
-            }
-
             if ((child = fork()) < 0){
                 errquit("fork");
             }
@@ -150,7 +134,7 @@ int main(int argc, char* argv[]){
                     errquit("ptrace");
                 }
                 execlp(executable, executable, NULL);
-                errquit("execvp");
+                errquit("execlp");
 
             }else{ // Parent
                 if (waitpid(child, &childStatus, 0) < 0){
@@ -197,19 +181,27 @@ int main(int argc, char* argv[]){
                 stage = RUNNING;
             }else if(strncmp(command,"start",INPUTSIZE) == 0){
                 fprintf(stderr,"** pid %d\n", child);
-                if(ptrace(PTRACE_SINGLESTEP, child, 0, 0) < 0) errquit("ptrace@parent");
-                stage = RUNNING;
+                stage = START;
             }else{
                 fprintf(stderr,"** Invalid command at LOADED stage: %s\n",input);
             }
         }
 
         // RUNNING stage
-        while(stage == RUNNING){
+        while(stage == RUNNING || stage == START){
             // When process is running -> it might stop due to many reasons
             // Ex: breakpoint ptrace(PTRACE_SINGLESTEP) or terminated
-			if(waitpid(child, &childStatus, 0) < 0) errquit("waitpid");
+            if(stage == RUNNING){
+                if(waitpid(child, &childStatus, 0) < 0) errquit("waitpid");
+
+            }else if(stage == START){
+                // stage START can pass waitpid since it is definitely stopped
+                // this operation only trigger once -> change stage back to RUNNING
+                stage = RUNNING;
+            }
+
             if(WIFSTOPPED(childStatus)){
+                // child process is stopped -> We can send our command to child process
                 fprintf(stderr,"stopped\n");
                 rip = ptrace(PTRACE_PEEKUSER, child, ((unsigned char *) &regs.rip) - ((unsigned char *) &regs), 0);
                 ret = ptrace(PTRACE_PEEKTEXT, child, rip, 0);
@@ -217,12 +209,37 @@ int main(int argc, char* argv[]){
 					rip,
 					ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
                 sleep(10000);
+
             }else if(WIFEXITED(childStatus)){
-                fprintf(stderr,"exited\n");
-                sleep(10000);
+                // process is finished
+                // 1. print message
+                fprintf(stderr, "child process %d terminiated normally (code %d)\n", child, childStatus);
+
+                // 2. reload process
+                if ((child = fork()) < 0){
+                    errquit("fork");
+                }
+
+                if (child == 0){ // Child
+                    if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0){
+                        errquit("ptrace");
+                    }
+                    execlp(executable, executable, NULL);
+                    errquit("execlp");
+
+                }else{ // Parent
+                    if (waitpid(child, &childStatus, 0) < 0){
+                        errquit("waitpid");
+                    }
+                    assert(WIFSTOPPED(childStatus));
+                    ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
+                }
+
+                // 3. change stage to LOADED
+                stage = LOADED;
+
             }else{
-                fprintf(stderr,"other??\n");
-                sleep(10000);
+                errquit("Not STOP or EXIT");
             }
         }
     }
