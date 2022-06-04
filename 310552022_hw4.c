@@ -67,9 +67,9 @@ int main(int argc, char* argv[]){
             }
         }
     }
-    printf("** scriptPath: %s\n",scriptPath);
-    printf("** executable file: %s\n",executable);
-    
+    fprintf(stderr, "** scriptPath: %s\n", scriptPath);
+    fprintf(stderr, "** executable file: %s\n", executable);
+
     // if hasExecutable -> load exe first 
     if(hasExecutable){
         // preworking with executable path
@@ -104,7 +104,7 @@ int main(int argc, char* argv[]){
             read(elfFd, &elfHeader, sizeof(Elf64_Ehdr));
             
             // Show relative infomation
-            printf("** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
+            fprintf(stderr,"** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
         }
         stage = LOADED;
     }
@@ -112,13 +112,13 @@ int main(int argc, char* argv[]){
     // NOTLOADED stage 
     while(stage == NOTLOADED){
         char input[INPUTSIZE] = {};
-        printf("sdb> ");
+        fprintf(stderr,"sdb> ");
         fgets(input,INPUTSIZE,stdin);
         char *command = strtok(input, delima);
 
         // Parsing
         if(strncmp(command,"help",INPUTSIZE) == 0 || strncmp(command,"h",INPUTSIZE) ==0){
-            printf("%s",helpMsg);
+            fprintf(stderr,"%s",helpMsg);
 
         }else if(strncmp(command,"exit",INPUTSIZE) == 0 || strncmp(command,"q",INPUTSIZE) ==0){
             exit(0);
@@ -164,12 +164,12 @@ int main(int argc, char* argv[]){
                 read(elfFd, &elfHeader, sizeof(Elf64_Ehdr));
 
                 // Show relative infomation
-                printf("** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
+                fprintf(stderr,"** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
             }
             stage = LOADED;
 
         }else{
-            printf("** Invalid command at NOTLOADED stage: %s\n",input);
+            fprintf(stderr,"** Invalid command at NOTLOADED stage: %s\n",input);
         }
     }
     
@@ -178,13 +178,13 @@ int main(int argc, char* argv[]){
         // LOADED stage
         while (stage == LOADED){
             char input[INPUTSIZE] = {};
-            printf("sdb> ");
+            fprintf(stderr,"sdb> ");
             fgets(input,INPUTSIZE,stdin);
             char *command = strtok(input, delima);
 
             // Parsing
             if(strncmp(command,"help",INPUTSIZE) == 0 || strncmp(command,"h",INPUTSIZE) ==0){
-                printf("%s",helpMsg);
+                fprintf(stderr,"%s",helpMsg);
 
             }else if(strncmp(command,"exit",INPUTSIZE) == 0 || strncmp(command,"q",INPUTSIZE) ==0){
                 exit(0);
@@ -196,18 +196,34 @@ int main(int argc, char* argv[]){
                 ptrace(PTRACE_CONT, child, 0, 0);
                 stage = RUNNING;
             }else if(strncmp(command,"start",INPUTSIZE) == 0){
-                printf("** pid %d\n", child);
+                fprintf(stderr,"** pid %d\n", child);
+                if(ptrace(PTRACE_SINGLESTEP, child, 0, 0) < 0) errquit("ptrace@parent");
                 stage = RUNNING;
             }else{
-                printf("** Invalid command at LOADED stage: %s\n",input);
+                fprintf(stderr,"** Invalid command at LOADED stage: %s\n",input);
             }
         }
 
         // RUNNING stage
         while(stage == RUNNING){
             // When process is running -> it might stop due to many reasons
-            // Ex: breakpoint or terminated
-
+            // Ex: breakpoint ptrace(PTRACE_SINGLESTEP) or terminated
+			if(waitpid(child, &childStatus, 0) < 0) errquit("waitpid");
+            if(WIFSTOPPED(childStatus)){
+                fprintf(stderr,"stopped\n");
+                rip = ptrace(PTRACE_PEEKUSER, child, ((unsigned char *) &regs.rip) - ((unsigned char *) &regs), 0);
+                ret = ptrace(PTRACE_PEEKTEXT, child, rip, 0);
+				fprintf(stderr, "0x%llx: %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x\n",
+					rip,
+					ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
+                sleep(10000);
+            }else if(WIFEXITED(childStatus)){
+                fprintf(stderr,"exited\n");
+                sleep(10000);
+            }else{
+                fprintf(stderr,"other??\n");
+                sleep(10000);
+            }
         }
     }
 }
@@ -227,7 +243,7 @@ void handleScriptPath(int argc, char* argv[], char* scriptPath){
                 strcat(scriptPath, optarg);
                 break;
             default:
-                printf("usage: ./hw4 [-s script] [program]\n");
+                fprintf(stderr,"usage: ./hw4 [-s script] [program]\n");
                 exit(-1);
         }
     }    
