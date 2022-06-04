@@ -38,11 +38,6 @@ int main(int argc, char* argv[]){
     pid_t child;
     int childStatus;
 
-    long ret;
-    unsigned long long rip;
-    struct user_regs_struct regs;
-    unsigned char *ptr = (unsigned char *)&ret;
-
     int elfFd = 0;
     Elf64_Ehdr elfHeader;
 
@@ -207,6 +202,11 @@ int main(int argc, char* argv[]){
                 fgets(input, INPUTSIZE, stdin);
                 char *command = strtok(input, delima);
 
+                long ret;
+                unsigned long long rip;
+                struct user_regs_struct regs;
+                unsigned char *ptr = (unsigned char *)&ret;
+
                 // Parsing
                 if (strncmp(command, "help", INPUTSIZE) == 0 || strncmp(command, "h", INPUTSIZE) == 0){
                     fprintf(stderr, "%s", helpMsg);
@@ -225,7 +225,8 @@ int main(int argc, char* argv[]){
                     // TODO
 
                 }else if (strncmp(command, "cont", INPUTSIZE) == 0 || strncmp(command, "c", INPUTSIZE) == 0){
-                    // TODO
+                    // just keep executing
+                    ptrace(PTRACE_CONT, child, 0, 0);
 
                 }else if (strncmp(command, "delete", INPUTSIZE) == 0){
                     // TODO
@@ -249,8 +250,9 @@ int main(int argc, char* argv[]){
                     // TODO
 
                 }else if (strncmp(command, "si", INPUTSIZE) == 0){
-                    // TODO
-
+                    // just send single step to tracee
+                    ptrace(PTRACE_SINGLESTEP, child, 0, 0);
+                    
                 }else{
                     fprintf(stderr, "** Invalid command at RUNNING stage: %s\n", input);
                     stage = START; // in order to loop to the same place
