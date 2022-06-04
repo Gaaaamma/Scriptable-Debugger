@@ -169,7 +169,7 @@ int main(int argc, char* argv[]){
             stage = LOADED;
 
         }else{
-            printf("** Invalid command: %s\n",input);
+            printf("** Invalid command at NOTLOADED stage: %s\n",input);
         }
     }
     
@@ -193,18 +193,20 @@ int main(int argc, char* argv[]){
                 // TODO
 
             }else if(strncmp(command,"run",INPUTSIZE) == 0 || strncmp(command,"r",INPUTSIZE) ==0){
-                // TODO
-
+                ptrace(PTRACE_CONT, child, 0, 0);
+                stage = RUNNING;
             }else if(strncmp(command,"start",INPUTSIZE) == 0){
                 printf("** pid %d\n", child);
                 stage = RUNNING;
             }else{
-                printf("** Invalid command: %s\n",input);
+                printf("** Invalid command at LOADED stage: %s\n",input);
             }
         }
 
         // RUNNING stage
         while(stage == RUNNING){
+            // When process is running -> it might stop due to many reasons
+            // Ex: breakpoint or terminated
 
         }
     }
