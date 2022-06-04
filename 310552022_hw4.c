@@ -202,13 +202,59 @@ int main(int argc, char* argv[]){
 
             if(WIFSTOPPED(childStatus)){
                 // child process is stopped -> We can send our command to child process
-                fprintf(stderr,"stopped\n");
-                rip = ptrace(PTRACE_PEEKUSER, child, ((unsigned char *) &regs.rip) - ((unsigned char *) &regs), 0);
-                ret = ptrace(PTRACE_PEEKTEXT, child, rip, 0);
-				fprintf(stderr, "0x%llx: %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x\n",
-					rip,
-					ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
-                sleep(10000);
+                char input[INPUTSIZE] = {};
+                fprintf(stderr, "sdb> ");
+                fgets(input, INPUTSIZE, stdin);
+                char *command = strtok(input, delima);
+
+                // Parsing
+                if (strncmp(command, "help", INPUTSIZE) == 0 || strncmp(command, "h", INPUTSIZE) == 0){
+                    fprintf(stderr, "%s", helpMsg);
+                    
+                }else if (strncmp(command, "exit", INPUTSIZE) == 0 || strncmp(command, "q", INPUTSIZE) == 0){
+                    exit(0);
+
+                }else if (strncmp(command, "list", INPUTSIZE) == 0 || strncmp(command, "l", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "run", INPUTSIZE) == 0 || strncmp(command, "r", INPUTSIZE) == 0){
+                    fprintf(stderr, "** program %s is already running\n", executable);
+                    ptrace(PTRACE_CONT, child, 0, 0);
+
+                }else if (strncmp(command, "break", INPUTSIZE) == 0 || strncmp(command, "b", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "cont", INPUTSIZE) == 0 || strncmp(command, "c", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "delete", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "disasm", INPUTSIZE) == 0 || strncmp(command, "d", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "dump", INPUTSIZE) == 0 || strncmp(command, "x", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "get", INPUTSIZE) == 0 || strncmp(command, "g", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "getregs", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "vmmap", INPUTSIZE) == 0 || strncmp(command, "m", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "set", INPUTSIZE) == 0 || strncmp(command, "s", INPUTSIZE) == 0){
+                    // TODO
+
+                }else if (strncmp(command, "si", INPUTSIZE) == 0){
+                    // TODO
+
+                }else{
+                    fprintf(stderr, "** Invalid command at RUNNING stage: %s\n", input);
+                    stage = START; // in order to loop to the same place
+                }
 
             }else if(WIFEXITED(childStatus)){
                 // process is finished
