@@ -15,6 +15,9 @@
 //        Global Define         //
 //******************************//
 #define INPUTSIZE 256
+#define MAPSSIZE 1000
+#define DBYTE 16
+
 char helpMsg[] = "- break {instruction-address}: add a break point\n- cont: continue execution\n- delete {break-point-id}: remove a break point\n- disasm addr: disassemble instructions in a file or a memory region\n- dump addr: dump memory content\n- exit: terminate the debugger\n- get reg: get a single value from a register\n- getregs: show registers\n- help: show this message\n- list: list break points\n- load {path/to/a/program}: load a program\n- run: run the program\n- vmmap: show memory layout\n- set reg val: get a single value to a register\n- si: step into instruction\n- start: start the program and stop at the first instruction\n";
 const char delima[3] = " \n";
 typedef enum{
@@ -27,6 +30,8 @@ typedef enum{
 //******************************//
 //          functions           //
 //******************************//
+char* offsetHandling(char *offset);
+char* addLackZero(char *padding, char *target);
 void printRegs(char* target, struct user_regs_struct regs);
 void errquit(const char *msg);
 void handleScriptPath(int argc, char* argv[], char* scriptPath);
@@ -217,6 +222,7 @@ int main(int argc, char* argv[]){
 
                 }else if (strncmp(command, "list", INPUTSIZE) == 0 || strncmp(command, "l", INPUTSIZE) == 0){
                     // TODO
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "run", INPUTSIZE) == 0 || strncmp(command, "r", INPUTSIZE) == 0){
                     fprintf(stderr, "** program %s is already running\n", executable);
@@ -224,6 +230,7 @@ int main(int argc, char* argv[]){
 
                 }else if (strncmp(command, "break", INPUTSIZE) == 0 || strncmp(command, "b", INPUTSIZE) == 0){
                     // TODO
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "cont", INPUTSIZE) == 0 || strncmp(command, "c", INPUTSIZE) == 0){
                     // just keep executing
@@ -231,12 +238,15 @@ int main(int argc, char* argv[]){
 
                 }else if (strncmp(command, "delete", INPUTSIZE) == 0){
                     // TODO
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "disasm", INPUTSIZE) == 0 || strncmp(command, "d", INPUTSIZE) == 0){
                     // TODO
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "dump", INPUTSIZE) == 0 || strncmp(command, "x", INPUTSIZE) == 0){
                     // TODO
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "get", INPUTSIZE) == 0 || strncmp(command, "g", INPUTSIZE) == 0){
                     // keep spliting
@@ -253,10 +263,45 @@ int main(int argc, char* argv[]){
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "vmmap", INPUTSIZE) == 0 || strncmp(command, "m", INPUTSIZE) == 0){
-                    // TODO
+                    // 0. get target file string
+                    char targetFile[INPUTSIZE] = {};
+                    char *address = NULL ;
+                    char *perms = NULL ;
+                    char *offset = NULL ;
+                    char *pathName = NULL ;
+                    sprintf(targetFile, "/proc/%d/maps", child);
+
+                    // 1. get information
+                    char mapsInfo[MAPSSIZE] = {};
+                    FILE* mapsStream = fopen(targetFile, "r");
+                    while(fgets(mapsInfo, MAPSSIZE, mapsStream) != NULL){
+                        // pasing each line of maps
+                        address = strtok(mapsInfo, " \n");
+                        perms = strtok(NULL, " \n");
+                        offset = strtok(NULL, " \n");
+                        strtok(NULL, " \n"); // unused dev
+                        strtok(NULL, " \n"); // unused inode
+                        pathName = strtok(NULL, " \n");
+
+                        // address Front && End
+                        char *addressFront = strtok(address, "-\n");
+                        char *addressEnd = strtok(NULL, "-\n");
+
+                        // perms without p
+                        perms = strtok(perms, "p");
+                        
+                        // print result
+                        char padding[DBYTE] = {};
+                        if(pathName != NULL){
+                            fprintf(stderr, "%s%s-%s%s %s %-8s %s\n", addLackZero(padding, addressFront), addressFront, addLackZero(padding, addressEnd), addressEnd, perms, offsetHandling(offset), pathName);
+                        }
+                    }
+                    
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "set", INPUTSIZE) == 0 || strncmp(command, "s", INPUTSIZE) == 0){
                     // TODO
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "si", INPUTSIZE) == 0){
                     // just send single step to tracee
@@ -305,6 +350,30 @@ int main(int argc, char* argv[]){
 //******************************//
 //          functions           //
 //******************************//
+char* offsetHandling(char *offset){
+    int length = strlen(offset);
+    for(int i=0; i<length;i++){
+        if(offset[i] != '0'){
+            offset = &offset[i];
+            break;
+
+        }else if(i == length-1){
+            // last one
+            offset = &offset[i];
+        }
+    }
+    return offset;
+}
+char* addLackZero(char *padding,char *target){
+    memset(padding,0,DBYTE);
+
+    int length = strlen(target);
+    int lack = DBYTE - length;
+    for(int i=0;i<lack;i++){
+        strcat(padding,"0");
+    }
+    return padding;
+}
 void printRegs(char* target, struct user_regs_struct regs){
     unsigned long long rax = regs.rax;
     unsigned long long rbx = regs.rbx;
@@ -330,12 +399,12 @@ void printRegs(char* target, struct user_regs_struct regs){
     unsigned long long eflags = regs.eflags;
 
     if(strncmp(target, "all", INPUTSIZE) ==0){
-        // TODO print all
-        printf("RAX %-16llx  RBX %-16llx  RCX %-16llx  RDX %llx\n", rax, rbx, rcx, rdx);
-        printf("R8  %-16llx  R9  %-16llx  R10 %-16llx  R11 %llx\n", r8, r9, r10, r11);
-        printf("R12 %-16llx  R13 %-16llx  R14 %-16llx  R15 %llx\n", r12, r13, r14, r15);
-        printf("RDI %-16llx  RSI %-16llx  RBP %-16llx  RSP %llx\n", rdi, rsi, rbp, rsp);
-        printf("RIP %-16llx  FLAGS %016llx\n", rip, eflags);
+        // print all
+        fprintf(stderr,"RAX %-16llx  RBX %-16llx  RCX %-16llx  RDX %llx\n", rax, rbx, rcx, rdx);
+        fprintf(stderr,"R8  %-16llx  R9  %-16llx  R10 %-16llx  R11 %llx\n", r8, r9, r10, r11);
+        fprintf(stderr,"R12 %-16llx  R13 %-16llx  R14 %-16llx  R15 %llx\n", r12, r13, r14, r15);
+        fprintf(stderr,"RDI %-16llx  RSI %-16llx  RBP %-16llx  RSP %llx\n", rdi, rsi, rbp, rsp);
+        fprintf(stderr,"RIP %-16llx  FLAGS %016llx\n", rip, eflags);
     }else{
         if (strncmp(target, "rax", INPUTSIZE) == 0){
             fprintf(stderr,"%s = %lld (0x%llx)\n",target, rax, rax);
