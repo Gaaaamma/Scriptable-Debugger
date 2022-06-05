@@ -27,6 +27,7 @@ typedef enum{
 //******************************//
 //          functions           //
 //******************************//
+void printRegs(char* target, struct user_regs_struct regs);
 void errquit(const char *msg);
 void handleScriptPath(int argc, char* argv[], char* scriptPath);
 
@@ -238,10 +239,18 @@ int main(int argc, char* argv[]){
                     // TODO
 
                 }else if (strncmp(command, "get", INPUTSIZE) == 0 || strncmp(command, "g", INPUTSIZE) == 0){
-                    // TODO
+                    // keep spliting
+                    command = strtok(NULL, delima);
+                    if(ptrace(PTRACE_GETREGS, child, 0, &regs) == 0) {
+                        printRegs(command, regs);
+                    }
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "getregs", INPUTSIZE) == 0){
-                    // TODO
+                    if(ptrace(PTRACE_GETREGS, child, 0, &regs) == 0) {
+                        printRegs("all", regs);
+                    }
+                    stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "vmmap", INPUTSIZE) == 0 || strncmp(command, "m", INPUTSIZE) == 0){
                     // TODO
@@ -252,7 +261,7 @@ int main(int argc, char* argv[]){
                 }else if (strncmp(command, "si", INPUTSIZE) == 0){
                     // just send single step to tracee
                     ptrace(PTRACE_SINGLESTEP, child, 0, 0);
-                    
+
                 }else{
                     fprintf(stderr, "** Invalid command at RUNNING stage: %s\n", input);
                     stage = START; // in order to loop to the same place
@@ -296,6 +305,79 @@ int main(int argc, char* argv[]){
 //******************************//
 //          functions           //
 //******************************//
+void printRegs(char* target, struct user_regs_struct regs){
+    unsigned long long rax = regs.rax;
+    unsigned long long rbx = regs.rbx;
+    unsigned long long rcx = regs.rcx;
+    unsigned long long rdx = regs.rdx;
+
+    unsigned long long r8 = regs.r8;
+    unsigned long long r9 = regs.r9;
+    unsigned long long r10 = regs.r10;
+    unsigned long long r11 = regs.r11;
+
+    unsigned long long r12 = regs.r12;
+    unsigned long long r13 = regs.r13;
+    unsigned long long r14 = regs.r14;
+    unsigned long long r15 = regs.r15;
+
+    unsigned long long rdi = regs.rdi;
+    unsigned long long rsi = regs.rsi;
+    unsigned long long rbp = regs.rbp;
+    unsigned long long rsp = regs.rsp;
+
+    unsigned long long rip = regs.rip;
+    unsigned long long eflags = regs.eflags;
+
+    if(strncmp(target, "all", INPUTSIZE) ==0){
+        // TODO print all
+        printf("RAX %-16llx  RBX %-16llx  RCX %-16llx  RDX %llx\n", rax, rbx, rcx, rdx);
+        printf("R8  %-16llx  R9  %-16llx  R10 %-16llx  R11 %llx\n", r8, r9, r10, r11);
+        printf("R12 %-16llx  R13 %-16llx  R14 %-16llx  R15 %llx\n", r12, r13, r14, r15);
+        printf("RDI %-16llx  RSI %-16llx  RBP %-16llx  RSP %llx\n", rdi, rsi, rbp, rsp);
+        printf("RIP %-16llx  FLAGS %016llx\n", rip, eflags);
+    }else{
+        if (strncmp(target, "rax", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rax, rax);
+        }else if (strncmp(target, "rbx", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rbx, rbx);
+        }else if (strncmp(target, "rcx", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rcx, rcx);
+        }else if (strncmp(target, "rdx", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rdx, rdx);
+        }else if (strncmp(target, "r8", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r8, r8);
+        }else if (strncmp(target, "r9", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r9, r9);
+        }else if (strncmp(target, "r10", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r10, r10);
+        }else if (strncmp(target, "r11", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r11, r11);
+        }else if (strncmp(target, "r12", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r12, r12);
+        }else if (strncmp(target, "r13", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r13, r13);
+        }else if (strncmp(target, "r14", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r14, r14);
+        }else if (strncmp(target, "r15", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, r15, r15);
+        }else if (strncmp(target, "rdi", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rdi, rdi);
+        }else if (strncmp(target, "rsi", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rsi, rsi);
+        }else if (strncmp(target, "rbp", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rbp, rbp);
+        }else if (strncmp(target, "rsp", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rsp, rsp);
+        }else if (strncmp(target, "rip", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, rip, rip);
+        }else if (strncmp(target, "flags", INPUTSIZE) == 0){
+            fprintf(stderr,"%s = %lld (0x%llx)\n",target, eflags, eflags);
+        }else{
+            fprintf(stderr,"** unknown target in printRegs\n");
+        }
+    }
+}
 void errquit(const char *msg) {
 	perror(msg);
 	exit(-1);
