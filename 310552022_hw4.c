@@ -30,6 +30,7 @@ typedef enum{
 //******************************//
 //          functions           //
 //******************************//
+void setRegs(pid_t child, char* target, char *value, struct user_regs_struct *regs);
 char* offsetHandling(char *offset);
 char* addLackZero(char *padding, char *target);
 void printRegs(char* target, struct user_regs_struct regs);
@@ -296,11 +297,18 @@ int main(int argc, char* argv[]){
                             fprintf(stderr, "%s%s-%s%s %s %-8s %s\n", addLackZero(padding, addressFront), addressFront, addLackZero(padding, addressEnd), addressEnd, perms, offsetHandling(offset), pathName);
                         }
                     }
-                    
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "set", INPUTSIZE) == 0 || strncmp(command, "s", INPUTSIZE) == 0){
-                    // TODO
+                    // keep spliting
+                    char *targetReg = strtok(NULL, delima);
+                    char *value = strtok(NULL, delima);
+
+                    // 0. get original regs
+                    if(ptrace(PTRACE_GETREGS, child, 0, &regs) == 0) {
+                        // 1. set reg values
+                        setRegs(child, targetReg, value, &regs);
+                    }
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "si", INPUTSIZE) == 0){
@@ -350,6 +358,73 @@ int main(int argc, char* argv[]){
 //******************************//
 //          functions           //
 //******************************//
+void setRegs(pid_t child, char* target, char *value, struct user_regs_struct *regs){
+    // 0. parsing value to unsingned long long
+    unsigned long long targetValue = (unsigned long long)strtoll(value,NULL,16);
+
+    // 1. change target reg value
+    if(strncmp(target, "rax", INPUTSIZE) == 0){
+        regs->rax = targetValue;
+
+    }else if(strncmp(target, "rbx", INPUTSIZE) == 0){
+        regs->rbx = targetValue;
+
+    }else if(strncmp(target, "rcx", INPUTSIZE) == 0){
+        regs->rcx = targetValue;
+
+    }else if(strncmp(target, "rdx", INPUTSIZE) == 0){
+        regs->rdx = targetValue;
+
+    }else if(strncmp(target, "r8", INPUTSIZE) == 0){
+        regs->r8 = targetValue;
+
+    }else if(strncmp(target, "r9", INPUTSIZE) == 0){
+        regs->r9 = targetValue;
+
+    }else if(strncmp(target, "r10", INPUTSIZE) == 0){
+        regs->r10 = targetValue;
+
+    }else if(strncmp(target, "r11", INPUTSIZE) == 0){
+        regs->r11 = targetValue;
+
+    }else if(strncmp(target, "r12", INPUTSIZE) == 0){
+        regs->r12 = targetValue;
+
+    }else if(strncmp(target, "r13", INPUTSIZE) == 0){
+        regs->r13 = targetValue;
+
+    }else if(strncmp(target, "r14", INPUTSIZE) == 0){
+        regs->r14 = targetValue;
+
+    }else if(strncmp(target, "r15", INPUTSIZE) == 0){
+        regs->r15 = targetValue;
+
+    }else if(strncmp(target, "rdi", INPUTSIZE) == 0){
+        regs->rdi = targetValue;
+
+    }else if(strncmp(target, "rsi", INPUTSIZE) == 0){
+        regs->rsi = targetValue;
+
+    }else if(strncmp(target, "rbp", INPUTSIZE) == 0){
+        regs->rbp = targetValue;
+
+    }else if(strncmp(target, "rsp", INPUTSIZE) == 0){
+        regs->rsp = targetValue;
+
+    }else if(strncmp(target, "rip", INPUTSIZE) == 0){
+        regs->rip = targetValue;
+
+    }else if(strncmp(target, "flags", INPUTSIZE) == 0){
+        regs->eflags = targetValue;
+
+    }else{
+        fprintf(stderr, "** unknown target in setRegs\n");
+        return ;
+    }
+
+    // 2. call ptrace to update value 
+    if (ptrace(PTRACE_SETREGS, child, 0, regs) != 0) errquit("ptrace(SETREGS)");
+}
 char* offsetHandling(char *offset){
     int length = strlen(offset);
     for(int i=0; i<length;i++){
