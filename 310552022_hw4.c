@@ -17,6 +17,7 @@
 #define INPUTSIZE 256
 #define MAPSSIZE 1000
 #define DBYTE 16
+#define DUMPTIMES 10
 
 char helpMsg[] = "- break {instruction-address}: add a break point\n- cont: continue execution\n- delete {break-point-id}: remove a break point\n- disasm addr: disassemble instructions in a file or a memory region\n- dump addr: dump memory content\n- exit: terminate the debugger\n- get reg: get a single value from a register\n- getregs: show registers\n- help: show this message\n- list: list break points\n- load {path/to/a/program}: load a program\n- run: run the program\n- vmmap: show memory layout\n- set reg val: get a single value to a register\n- si: step into instruction\n- start: start the program and stop at the first instruction\n";
 const char delima[3] = " \n";
@@ -208,11 +209,7 @@ int main(int argc, char* argv[]){
                 fprintf(stderr, "sdb> ");
                 fgets(input, INPUTSIZE, stdin);
                 char *command = strtok(input, delima);
-
-                long ret;
-                unsigned long long rip;
                 struct user_regs_struct regs;
-                unsigned char *ptr = (unsigned char *)&ret;
 
                 // Parsing
                 if (strncmp(command, "help", INPUTSIZE) == 0 || strncmp(command, "h", INPUTSIZE) == 0){
@@ -246,7 +243,56 @@ int main(int argc, char* argv[]){
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "dump", INPUTSIZE) == 0 || strncmp(command, "x", INPUTSIZE) == 0){
-                    // TODO
+                    int printableIndex =0;
+                    unsigned int printableASCII[DBYTE+1] = {};
+                    char *target = strtok(NULL, delima);
+                    long ret;
+                    unsigned char *ptr = (unsigned char *)&ret;
+
+                    if(target != NULL){
+                        unsigned long long address = strtoll(target, NULL, 16);
+                        for (int i = 0; i < DUMPTIMES; i++){
+                            // get machine code at address
+                            ret = ptrace(PTRACE_PEEKTEXT, child, address, 0);
+
+                            // save machine code of int to printableASCII
+                            for (int j = 0; j < 8; j++){
+                                printableASCII[printableIndex] = (int)ptr[j];
+                                printableIndex++;
+                            }
+
+                            // even i will print front part
+                            if(i%2 ==0){
+                                fprintf(stderr, "0x%llx: %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x",
+                                        address,
+                                        ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
+                            }else{
+                                // odd i will print end part
+                                fprintf(stderr, " %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x |",
+                                    ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
+                                
+                                // print printable ASCII
+                                for (int k = 0; k < printableIndex; k++){
+                                    if (printableASCII[k] >= 32 && printableASCII[k] <= 127){
+                                        // printable
+                                        fprintf(stderr,"%c", printableASCII[k]);
+                                    }else{
+                                        // not printable
+                                        fprintf(stderr,".");
+                                    }
+                                }
+                                fprintf(stderr,"|\n");
+
+                                // even + odd = one pair => reset index
+                                printableIndex = 0;
+                            }
+                            address += 8;
+                        }
+
+                    }else{
+                        // Invalid address
+                        fprintf(stderr,"** no addr is given\n");
+                    }
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "get", INPUTSIZE) == 0 || strncmp(command, "g", INPUTSIZE) == 0){
