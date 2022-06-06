@@ -538,8 +538,16 @@ void checkBreakpoint(){
 void addBreakpoint(pid_t child, unsigned long long address, unsigned long int lowBound, unsigned long int highBound){
     // 0. check if address is within (lowBound,highBound]
     if(address > lowBound && address <= highBound){
+        // 1. check if breakpoint already existed
+        for (int i = 0; i < breakpoints.num; i++){
+            if(breakpoints.breakpointAddress[i] == address){
+                fprintf(stderr,"** the breakpoint is already exists. (breakpoint %d)\n",i);
+                return;
+            }
+        }
+
         // Note: might save the code having 0xcc => but that is useless => only use last byte to recover code
-        // 1. record the address && original command && num of breakpoints
+        // 2. record the address && original command && num of breakpoints
         long code = ptrace(PTRACE_PEEKTEXT, child, address, 0);
         breakpoints.breakpointAddress[breakpoints.num] = address;
         breakpoints.originalCommand[breakpoints.num] = code;
@@ -547,7 +555,7 @@ void addBreakpoint(pid_t child, unsigned long long address, unsigned long int lo
 
         fprintf(stderr, "** saved code is: 0x%lx\n",code);
 
-        // 2. use ptrace to poke the corresponding memory
+        // 3. use ptrace to poke the corresponding memory
         if (ptrace(PTRACE_POKETEXT, child, address,(code & 0xffffffffffffff00) | 0xcc) != 0) errquit("poketext");
         
     }else{
