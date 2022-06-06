@@ -322,7 +322,9 @@ int main(int argc, char* argv[]){
                     ptrace(PTRACE_CONT, child, 0, 0);
 
                 }else if (strncmp(command, "delete", INPUTSIZE) == 0){
-                    // TODO
+                    char *target = strtok(NULL, delima);
+                    int index = strtol(target, NULL, 10);
+                    rmBreakpoint(child,index);
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "disasm", INPUTSIZE) == 0 || strncmp(command, "d", INPUTSIZE) == 0){
@@ -554,7 +556,6 @@ void addBreakpoint(pid_t child, unsigned long long address, unsigned long int lo
     }
 }
 void rmBreakpoint(pid_t child, int index){
-    // TODO
     // Note: 
     // #0 you can only recover the byte changed to 0xcc (Don't affect the other breakpoint)
     // #1 the last byte of breakpoints.originalCommand is truth -> other bytes are useless and maybe wrong
@@ -562,15 +563,36 @@ void rmBreakpoint(pid_t child, int index){
 
     // 0. check if index exist
     if(breakpoints.breakpointAddress[index] != 0){
-        // 1. PEEKTEXT again to get code now
+        // 1. PEEKTEXT again to get the code now
+        long code = ptrace(PTRACE_PEEKTEXT, child, breakpoints.breakpointAddress[index], 0);
+        fprintf(stderr,"** before delete: 0x%lx\n",code);
 
-        // 2. use ptrace to recover code original command
+        // 2. use ptrace to recover original command
+        if (ptrace(PTRACE_POKETEXT, child, breakpoints.breakpointAddress[index],
+        (code & 0xffffffffffffff00) | (breakpoints.originalCommand[index] & 0x00000000000000ff)) != 0) errquit("poketext");
 
-        // 3. rm the corresponding breakpoint address && command && number of breakpoints
+        code = ptrace(PTRACE_PEEKTEXT, child, breakpoints.breakpointAddress[index], 0);
+        fprintf(stderr, "** after delete:  0x%lx\n", code);
 
-        // 4. tidy up breakpoints
+        // 3. rm the corresponding breakpoint address && command => minus breakpoint number
+        for(int i= index; i < breakpoints.num ; i++){
+            if((i+1) < breakpoints.num){
+                breakpoints.breakpointAddress[i] = breakpoints.breakpointAddress[i+1];
+                breakpoints.originalCommand[i] = breakpoints.originalCommand[i+1];
+            }else{
+                // i is the last breakpoint
+                breakpoints.breakpointAddress[i] = 0;
+                breakpoints.originalCommand[i] = 0;
+                breakpoints.num--;
+            }
+        }
+
+        // 4. print message
+        fprintf(stderr,"** breakpoint %d deleted\n" ,index);
+
     }else{
         // Invalid index
+        fprintf(stderr,"** breakpoint %d does not exist\n",index);
     }
 }
 void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound){
