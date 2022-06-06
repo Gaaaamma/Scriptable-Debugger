@@ -12,7 +12,8 @@
 #include <elf.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-
+#include <inttypes.h>
+#include <capstone/capstone.h>
 //******************************//
 //        Global Define         //
 //******************************//
@@ -21,6 +22,8 @@
 #define DBYTE 16
 #define DUMPTIMES 10
 #define MAX_BREAKPOINT_NUM 100
+#define MAX_DISASM_INS 10
+#define MAX_CHAR_PERINS 10
 
 char helpMsg[] = "- break {instruction-address}: add a break point\n- cont: continue execution\n- delete {break-point-id}: remove a break point\n- disasm addr: disassemble instructions in a file or a memory region\n- dump addr: dump memory content\n- exit: terminate the debugger\n- get reg: get a single value from a register\n- getregs: show registers\n- help: show this message\n- list: list break points\n- load {path/to/a/program}: load a program\n- run: run the program\n- vmmap: show memory layout\n- set reg val: get a single value to a register\n- si: step into instruction\n- start: start the program and stop at the first instruction\n";
 const char delima[3] = " \n";
@@ -42,6 +45,7 @@ typedef struct{
 //******************************//
 //          functions           //
 //******************************//
+void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound);
 int findTextIndex(char *fname, size_t size);
 void setRegs(pid_t child, char* target, char *value, struct user_regs_struct *regs);
 char* offsetHandling(char *offset);
@@ -63,6 +67,8 @@ int main(int argc, char* argv[]){
     Elf64_Shdr secHeader;
     unsigned long int lowBound = 0;
     unsigned long int highBound = 0;
+    unsigned char *codeBuf = (unsigned char *)malloc(MAX_CHAR_PERINS * MAX_DISASM_INS * sizeof(char));
+    memset(codeBuf, 0, MAX_CHAR_PERINS * MAX_DISASM_INS * sizeof(char));
 
     int hasScript, hasExecutable=0;
     char scriptPath[INPUTSIZE] = {};
@@ -303,7 +309,44 @@ int main(int argc, char* argv[]){
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "disasm", INPUTSIZE) == 0 || strncmp(command, "d", INPUTSIZE) == 0){
-                    // TODO
+                    // get target address
+                    char *target = strtok(NULL, delima);
+                    if(target != NULL){
+                        int codeIndex = 0;
+                        unsigned long long address = strtoll(target, NULL, 16);
+                        unsigned long long commandAddress = address;
+                        if(address < lowBound || address > highBound){
+                            fprintf(stderr,"** the address is out of the range of the text segment\n");
+
+                        }else{
+                            long ret;
+                            unsigned char *ptr = (unsigned char *)&ret;
+                            // 0. get object code
+                            for (int i = 0; i < DUMPTIMES; i++){
+                                // get machine code at address
+                                ret = ptrace(PTRACE_PEEKTEXT, child, address, 0);
+
+                                // save machine code of int to printableASCII
+                                for (int j = 0; j < 8; j++){
+                                    codeBuf[codeIndex] = ptr[j];
+                                    codeIndex++;
+                                }
+                                address += 8;
+                            }
+
+                            // TODO 1. recover from cc to original command
+
+                            // 2. call disasm to print disassemble message
+                            disasm((uint8_t *)codeBuf, codeIndex, commandAddress, lowBound, highBound);
+
+                            // 3. reset codeBuf && codeIndex
+                            memset(codeBuf, 0, MAX_CHAR_PERINS * MAX_DISASM_INS * sizeof(char));
+                            codeIndex = 0;
+                        }
+                    }else{
+                        // Invalid address
+                        fprintf(stderr,"** no addr is given\n");
+                    }
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "dump", INPUTSIZE) == 0 || strncmp(command, "x", INPUTSIZE) == 0){
@@ -327,7 +370,7 @@ int main(int argc, char* argv[]){
 
                             // even i will print front part
                             if(i%2 ==0){
-                                fprintf(stderr, "0x%llx: %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x",
+                                fprintf(stderr, "\t0x%llx: %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x",
                                         address,
                                         ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
                             }else{
@@ -468,6 +511,45 @@ int main(int argc, char* argv[]){
 //******************************//
 //          functions           //
 //******************************//
+void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound){
+    int maxLines = 10;
+    csh handle;
+    cs_insn *insn;
+
+    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) errquit("cs_open");
+    size_t count = cs_disasm(handle, code, codeSize, startAddress, 0, &insn);
+    if (count > 0){
+        for (size_t j = 0; j < count; j++){
+            int lackFillSpace = 32;
+            if(maxLines > 0 && insn[j].address >= lowBound && insn[j].address <= highBound){
+                // print address
+                fprintf(stderr, "\t%" PRIx64 ":", insn[j].address);
+
+                // print machine bytes
+                for (int k = 0; k < insn[j].size; k++){
+                    fprintf(stderr," %02x", insn[j].bytes[k]);
+                    lackFillSpace -=3;
+                }
+                // print lack space
+                for(int m=0; m < lackFillSpace; m++){
+                    fprintf(stderr, " ");
+                }
+
+                // print disassemble code
+                fprintf(stderr, "%s\t%s\n", insn[j].mnemonic, insn[j].op_str);
+                maxLines -- ;
+                
+            }else{
+                fprintf(stderr, "** the address is out of the range of the text segment\n");
+                break;
+            }
+        }
+        cs_free(insn, count);
+    }else{
+        errquit("Fail to disassemble given code");
+    }
+    cs_close(&handle);
+}
 int findTextIndex(char *fname, size_t size) {
     int result = -1;
     int fd = open(fname, O_RDONLY);
