@@ -17,6 +17,5 @@ int main(int argc, char* argv[]){
     testFun();
     int d = 4;
     int e = a + c -d ;
-    sleep(3);
     printf("test.c is done\n");
 }

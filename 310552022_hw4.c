@@ -277,6 +277,7 @@ int main(int argc, char* argv[]){
                 // Parsing
                 if (strncmp(command, "help", INPUTSIZE) == 0 || strncmp(command, "h", INPUTSIZE) == 0){
                     fprintf(stderr, "%s", helpMsg);
+                    stage = START; // do nothing to make tracee stop again
                     
                 }else if (strncmp(command, "exit", INPUTSIZE) == 0 || strncmp(command, "q", INPUTSIZE) == 0){
                     exit(0);
