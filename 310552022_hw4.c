@@ -352,8 +352,19 @@ int main(int argc, char* argv[]){
                                 }
                                 address += 8;
                             }
-
-                            // TODO 1. recover from cc to original command
+                            
+                            // 1. recover from cc to original command (0xcc = 204)
+                            for (int i = 0; i < DUMPTIMES * 8; i++){
+                                if(codeBuf[i] == 0xcc){
+                                    unsigned long long recoverAddress = commandAddress + i ;
+                                    // 1.2 use recoverAddress to find original command from breakpoints.originalCommand
+                                    for (int j = 0; j < breakpoints.num; j++){
+                                        if(recoverAddress == breakpoints.breakpointAddress[j]){
+                                            codeBuf[i] = (breakpoints.originalCommand[j] & 0x00000000000000ff);
+                                        }
+                                    }
+                                }
+                            }
 
                             // 2. call disasm to print disassemble message
                             disasm((uint8_t *)codeBuf, codeIndex, commandAddress, lowBound, highBound);
