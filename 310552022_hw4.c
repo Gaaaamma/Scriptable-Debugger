@@ -34,17 +34,23 @@ typedef enum{
     START
 }stage_t;
 
-/*
+
 typedef struct{
-    int num;
-    unsigned long long breakpointSet[MAX_BREAKPOINT_NUM];
-    int originalCommand[MAX_BREAKPOINT_NUM];
+    // record the number of breakpoints
+    int num; 
+    // record breakpoint address
+    unsigned long long breakpointAddress[MAX_BREAKPOINT_NUM];
+    // record breakpoint original byte command
+    long originalCommand[MAX_BREAKPOINT_NUM];
 }breakpoint_t;
-*/
+breakpoint_t breakpoints;
 
 //******************************//
 //          functions           //
 //******************************//
+void checkBreakpoint();
+void addBreakpoint(pid_t child, unsigned long long address, unsigned long int lowBound, unsigned long int highBound);
+void rmBreakpoint(pid_t child, int index);
 void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound);
 int findTextIndex(char *fname, size_t size);
 void setRegs(pid_t child, char* target, char *value, struct user_regs_struct *regs);
@@ -67,8 +73,14 @@ int main(int argc, char* argv[]){
     Elf64_Shdr secHeader;
     unsigned long int lowBound = 0;
     unsigned long int highBound = 0;
+
     unsigned char *codeBuf = (unsigned char *)malloc(MAX_CHAR_PERINS * MAX_DISASM_INS * sizeof(char));
     memset(codeBuf, 0, MAX_CHAR_PERINS * MAX_DISASM_INS * sizeof(char));
+
+    // Initialization breakpoints
+    breakpoints.num = 0;
+    memset(breakpoints.breakpointAddress,0,MAX_BREAKPOINT_NUM);
+    memset(breakpoints.originalCommand,0,MAX_BREAKPOINT_NUM);
 
     int hasScript, hasExecutable=0;
     char scriptPath[INPUTSIZE] = {};
@@ -161,7 +173,7 @@ int main(int argc, char* argv[]){
             exit(0);
 
         }else if(strncmp(command,"list",INPUTSIZE) == 0 || strncmp(command,"l",INPUTSIZE) ==0){
-            // TODO
+            checkBreakpoint();
 
         }else if(strncmp(command,"load",INPUTSIZE) == 0){
             // keep spliting
@@ -238,7 +250,7 @@ int main(int argc, char* argv[]){
                 exit(0);
 
             }else if(strncmp(command,"list",INPUTSIZE) == 0 || strncmp(command,"l",INPUTSIZE) ==0){
-                // TODO
+                checkBreakpoint();
 
             }else if(strncmp(command,"run",INPUTSIZE) == 0 || strncmp(command,"r",INPUTSIZE) ==0){
                 ptrace(PTRACE_CONT, child, 0, 0);
@@ -289,7 +301,7 @@ int main(int argc, char* argv[]){
                     exit(0);
 
                 }else if (strncmp(command, "list", INPUTSIZE) == 0 || strncmp(command, "l", INPUTSIZE) == 0){
-                    // TODO
+                    checkBreakpoint();
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "run", INPUTSIZE) == 0 || strncmp(command, "r", INPUTSIZE) == 0){
@@ -297,7 +309,12 @@ int main(int argc, char* argv[]){
                     ptrace(PTRACE_CONT, child, 0, 0);
 
                 }else if (strncmp(command, "break", INPUTSIZE) == 0 || strncmp(command, "b", INPUTSIZE) == 0){
-                    // TODO
+                    // get target address
+                    char *target = strtok(NULL, delima);
+                    unsigned long long address = strtoll(target, NULL, 16);
+
+                    // 0. update breakpoints
+                    addBreakpoint(child, address, lowBound, highBound);
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "cont", INPUTSIZE) == 0 || strncmp(command, "c", INPUTSIZE) == 0){
@@ -511,6 +528,51 @@ int main(int argc, char* argv[]){
 //******************************//
 //          functions           //
 //******************************//
+void checkBreakpoint(){
+    for(int i=0; i<breakpoints.num; i++){
+        fprintf(stderr,"  %d: %llx\n", i, breakpoints.breakpointAddress[i]);
+    }
+}
+void addBreakpoint(pid_t child, unsigned long long address, unsigned long int lowBound, unsigned long int highBound){
+    // 0. check if address is within (lowBound,highBound]
+    if(address > lowBound && address <= highBound){
+        // Note: might save the code having 0xcc => but that is useless => only use last byte to recover code
+        // 1. record the address && original command && num of breakpoints
+        long code = ptrace(PTRACE_PEEKTEXT, child, address, 0);
+        breakpoints.breakpointAddress[breakpoints.num] = address;
+        breakpoints.originalCommand[breakpoints.num] = code;
+        breakpoints.num ++;
+
+        fprintf(stderr, "** saved code is: 0x%lx\n",code);
+
+        // 2. use ptrace to poke the corresponding memory
+        if (ptrace(PTRACE_POKETEXT, child, address,(code & 0xffffffffffffff00) | 0xcc) != 0) errquit("poketext");
+        
+    }else{
+        // Invalid address
+        fprintf(stderr,"** the address is out of the range of the text segment\n");
+    }
+}
+void rmBreakpoint(pid_t child, int index){
+    // TODO
+    // Note: 
+    // #0 you can only recover the byte changed to 0xcc (Don't affect the other breakpoint)
+    // #1 the last byte of breakpoints.originalCommand is truth -> other bytes are useless and maybe wrong
+    // #2 thus, before recover, need to PEEKTEXT again and recover the appointed byte only
+
+    // 0. check if index exist
+    if(breakpoints.breakpointAddress[index] != 0){
+        // 1. PEEKTEXT again to get code now
+
+        // 2. use ptrace to recover code original command
+
+        // 3. rm the corresponding breakpoint address && command && number of breakpoints
+
+        // 4. tidy up breakpoints
+    }else{
+        // Invalid index
+    }
+}
 void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound){
     int maxLines = 10;
     csh handle;
@@ -538,7 +600,7 @@ void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long
                 // print disassemble code
                 fprintf(stderr, "%s\t%s\n", insn[j].mnemonic, insn[j].op_str);
                 maxLines -- ;
-                
+
             }else{
                 fprintf(stderr, "** the address is out of the range of the text segment\n");
                 break;
