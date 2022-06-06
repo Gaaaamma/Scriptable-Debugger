@@ -1,21 +1,30 @@
 #include <stdio.h>
-#include <unistd.h>
-void testFun(){
-    char a = 'a';
-    char b = 'b';
-    char c = 'c';
-    char d = 'd';
-    printf("testFun() is done\n");
-    return;
-    
-}
+#include <inttypes.h>
+#include <capstone/capstone.h>
 
-int main(int argc, char* argv[]){
-    int a = 1;
-    char b = 'b';
-    int c = 3;
-    testFun();
-    int d = 4;
-    int e = a + c -d ;
-    printf("test.c is done\n");
+#define CODE "\xb8\x04\x00\x00\x00\xbb\x01\x00\x00\x00\xb9\xd4\x00\x60\x00\xba\x0e\x00\x00\x00\xcd\x80"
+
+int main(int argc, char *argv[]){
+	csh handle;
+	cs_insn *insn;
+	size_t count;
+
+	if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK)
+		return -1;
+        
+	count = cs_disasm(handle, CODE, sizeof(CODE)-1, 0x1000, 0, &insn);
+	if (count > 0) {
+		size_t j;
+		for (j = 0; j < count; j++) {
+			printf("0x%"PRIx64":\t%s\t\t%s\n", insn[j].address, insn[j].mnemonic,
+					insn[j].op_str);
+		}
+
+		cs_free(insn, count);
+	} else
+		printf("ERROR: Failed to disassemble given code!\n");
+
+	cs_close(&handle);
+
+    return 0;
 }
