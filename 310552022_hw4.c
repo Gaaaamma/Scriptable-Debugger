@@ -10,6 +10,8 @@
 #include <sys/user.h>
 #include <errno.h>
 #include <elf.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 //******************************//
 //        Global Define         //
@@ -18,6 +20,7 @@
 #define MAPSSIZE 1000
 #define DBYTE 16
 #define DUMPTIMES 10
+#define MAX_BREAKPOINT_NUM 100
 
 char helpMsg[] = "- break {instruction-address}: add a break point\n- cont: continue execution\n- delete {break-point-id}: remove a break point\n- disasm addr: disassemble instructions in a file or a memory region\n- dump addr: dump memory content\n- exit: terminate the debugger\n- get reg: get a single value from a register\n- getregs: show registers\n- help: show this message\n- list: list break points\n- load {path/to/a/program}: load a program\n- run: run the program\n- vmmap: show memory layout\n- set reg val: get a single value to a register\n- si: step into instruction\n- start: start the program and stop at the first instruction\n";
 const char delima[3] = " \n";
@@ -28,9 +31,18 @@ typedef enum{
     START
 }stage_t;
 
+/*
+typedef struct{
+    int num;
+    unsigned long long breakpointSet[MAX_BREAKPOINT_NUM];
+    int originalCommand[MAX_BREAKPOINT_NUM];
+}breakpoint_t;
+*/
+
 //******************************//
 //          functions           //
 //******************************//
+int findTextIndex(char *fname, size_t size);
 void setRegs(pid_t child, char* target, char *value, struct user_regs_struct *regs);
 char* offsetHandling(char *offset);
 char* addLackZero(char *padding, char *target);
@@ -48,6 +60,9 @@ int main(int argc, char* argv[]){
 
     int elfFd = 0;
     Elf64_Ehdr elfHeader;
+    Elf64_Shdr secHeader;
+    unsigned long int lowBound = 0;
+    unsigned long int highBound = 0;
 
     int hasScript, hasExecutable=0;
     char scriptPath[INPUTSIZE] = {};
@@ -95,12 +110,30 @@ int main(int argc, char* argv[]){
             assert(WIFSTOPPED(childStatus));
             ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
 
-            // Get child entry point and data
+            // 0. Get child entry point and data
             elfFd = open(executable, S_IRUSR);
             read(elfFd, &elfHeader, sizeof(Elf64_Ehdr));
             
-            // Show relative infomation
+            // 1. Show entry point infomation
             fprintf(stderr,"** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
+
+            // 2. Show .text lowBound && highBound
+            struct stat st;
+            if (stat(executable, &st) != 0) errquit("stat");
+
+            // lseek to section header offset
+            lseek(elfFd, elfHeader.e_shoff, SEEK_SET);
+            for (int i = 0; i < elfHeader.e_shnum; i++){
+                read(elfFd, &secHeader, sizeof(Elf64_Shdr));
+                // check if section is .text or not
+                if (secHeader.sh_name == findTextIndex(executable, st.st_size)){
+                    // record .text lowBound && .text highBound
+                    lowBound = secHeader.sh_addr;
+                    highBound = lowBound + secHeader.sh_size - 1;
+                    fprintf(stderr, "** .text lowBound:  0x%lx\n", lowBound);
+                    fprintf(stderr, "** .text highBound: 0x%lx\n", highBound);
+                }
+            }
         }
         stage = LOADED;
     }
@@ -146,12 +179,30 @@ int main(int argc, char* argv[]){
                 assert(WIFSTOPPED(childStatus));
                 ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
 
-                // Get child entry point and data
+                // 0. Get child entry point and data
                 elfFd = open(executable, S_IRUSR);
                 read(elfFd, &elfHeader, sizeof(Elf64_Ehdr));
 
-                // Show relative infomation
+                // 1. Show entry point infomation
                 fprintf(stderr,"** program \'%s\' loaded. entry point 0x%lx\n", executable, elfHeader.e_entry);
+
+                // 2. Show .text lowBound && highBound
+                struct stat st;
+                if (stat(executable, &st) != 0) errquit("stat");
+
+                // lseek to section header offset
+                lseek(elfFd, elfHeader.e_shoff, SEEK_SET);
+                for (int i = 0; i < elfHeader.e_shnum; i++){
+                    read(elfFd, &secHeader, sizeof(Elf64_Shdr));
+                    // check if section is .text or not
+                    if (secHeader.sh_name == findTextIndex(executable, st.st_size)){
+                        // record .text lowBound && .text highBound
+                        lowBound = secHeader.sh_addr;
+                        highBound = lowBound + secHeader.sh_size - 1;
+                        fprintf(stderr, "** .text lowBound:  0x%lx\n", lowBound);
+                        fprintf(stderr, "** .text highBound: 0x%lx\n", highBound);
+                    }
+                }
             }
             stage = LOADED;
 
@@ -204,6 +255,14 @@ int main(int argc, char* argv[]){
             }
 
             if(WIFSTOPPED(childStatus)){
+                // check if stopped by self defined breakpoint 
+                // TODO
+                    // 0. recover breakpoint command
+                    
+                    // 1. reset rip(-=1)
+                    
+                    // 2. show relative message
+
                 // child process is stopped -> We can send our command to child process
                 char input[INPUTSIZE] = {};
                 fprintf(stderr, "sdb> ");
@@ -404,6 +463,27 @@ int main(int argc, char* argv[]){
 //******************************//
 //          functions           //
 //******************************//
+int findTextIndex(char *fname, size_t size) {
+    int result = -1;
+    int fd = open(fname, O_RDONLY);
+    char *p = mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0);
+
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)p;
+    Elf64_Shdr *shdr = (Elf64_Shdr *)(p + ehdr->e_shoff);
+    int shnum = ehdr->e_shnum;
+
+    Elf64_Shdr *sh_strtab = &shdr[ehdr->e_shstrndx];
+    const char *const sh_strtab_p = p + sh_strtab->sh_offset;
+
+    for (int i = 0; i < shnum; ++i){
+        if(strcmp(sh_strtab_p + shdr[i].sh_name,".text") == 0){
+            // find .text && record the index
+            result = shdr[i].sh_name;
+            break;
+        }
+    }
+    return result;
+}
 void setRegs(pid_t child, char* target, char *value, struct user_regs_struct *regs){
     // 0. parsing value to unsingned long long
     unsigned long long targetValue = (unsigned long long)strtoll(value,NULL,16);
