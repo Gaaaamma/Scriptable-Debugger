@@ -122,11 +122,13 @@ int main(int argc, char* argv[]){
             if (stat(executable, &st) != 0) errquit("stat");
 
             // lseek to section header offset
+            int textIndex = findTextIndex(executable, st.st_size);
+            
             lseek(elfFd, elfHeader.e_shoff, SEEK_SET);
             for (int i = 0; i < elfHeader.e_shnum; i++){
                 read(elfFd, &secHeader, sizeof(Elf64_Shdr));
                 // check if section is .text or not
-                if (secHeader.sh_name == findTextIndex(executable, st.st_size)){
+                if (secHeader.sh_name == textIndex){
                     // record .text lowBound && .text highBound
                     lowBound = secHeader.sh_addr;
                     highBound = lowBound + secHeader.sh_size - 1;
@@ -191,11 +193,13 @@ int main(int argc, char* argv[]){
                 if (stat(executable, &st) != 0) errquit("stat");
 
                 // lseek to section header offset
+                int textIndex = findTextIndex(executable, st.st_size);
                 lseek(elfFd, elfHeader.e_shoff, SEEK_SET);
+
                 for (int i = 0; i < elfHeader.e_shnum; i++){
                     read(elfFd, &secHeader, sizeof(Elf64_Shdr));
                     // check if section is .text or not
-                    if (secHeader.sh_name == findTextIndex(executable, st.st_size)){
+                    if (secHeader.sh_name == textIndex){
                         // record .text lowBound && .text highBound
                         lowBound = secHeader.sh_addr;
                         highBound = lowBound + secHeader.sh_size - 1;
