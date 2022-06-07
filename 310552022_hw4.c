@@ -48,10 +48,12 @@ breakpoint_t breakpoints;
 //******************************//
 //          functions           //
 //******************************//
+void resetBreakpoints(pid_t child, unsigned long long meetBreakpointAddress, int setAll);
+unsigned long long bpAndRecoverCommand(pid_t child, unsigned long int lowBound, unsigned long int highBound, int *fromSingleStep);
 void checkBreakpoint();
 void addBreakpoint(pid_t child, unsigned long long address, unsigned long int lowBound, unsigned long int highBound);
 void rmBreakpoint(pid_t child, int index);
-void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound);
+void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound ,int lines);
 int findTextIndex(char *fname, size_t size);
 void setRegs(pid_t child, char* target, char *value, struct user_regs_struct *regs);
 char* offsetHandling(char *offset);
@@ -78,6 +80,8 @@ int main(int argc, char* argv[]){
     memset(codeBuf, 0, MAX_CHAR_PERINS * MAX_DISASM_INS * sizeof(char));
 
     // Initialization breakpoints
+    int fromSingleStep = 0;
+    unsigned long long meetBreakpointAddress = 0;
     breakpoints.num = 0;
     memset(breakpoints.breakpointAddress,0,MAX_BREAKPOINT_NUM);
     memset(breakpoints.originalCommand,0,MAX_BREAKPOINT_NUM);
@@ -269,7 +273,10 @@ int main(int argc, char* argv[]){
             // Ex: breakpoint ptrace(PTRACE_SINGLESTEP) or terminated
             if(stage == RUNNING){
                 if(waitpid(child, &childStatus, 0) < 0) errquit("waitpid");
-
+                // Only RUNNING stage need to check again if step into breakpoint (run/cont/si)
+                if(WIFSTOPPED(childStatus)){
+                    meetBreakpointAddress = bpAndRecoverCommand(child, lowBound, highBound, &fromSingleStep);
+                }
             }else if(stage == START){
                 // stage START can pass waitpid since it is definitely stopped
                 // this operation only trigger once -> change stage back to RUNNING
@@ -277,14 +284,6 @@ int main(int argc, char* argv[]){
             }
 
             if(WIFSTOPPED(childStatus)){
-                // check if stopped by self defined breakpoint 
-                // TODO
-                    // 0. recover breakpoint command
-                    
-                    // 1. reset rip(-=1)
-                    
-                    // 2. show relative message
-
                 // child process is stopped -> We can send our command to child process
                 char input[INPUTSIZE] = {};
                 fprintf(stderr, "sdb> ");
@@ -306,7 +305,38 @@ int main(int argc, char* argv[]){
 
                 }else if (strncmp(command, "run", INPUTSIZE) == 0 || strncmp(command, "r", INPUTSIZE) == 0){
                     fprintf(stderr, "** program %s is already running\n", executable);
-                    ptrace(PTRACE_CONT, child, 0, 0);
+                    
+                    // 0. Check if stopped by self defined breakpoints this time
+                    if(meetBreakpointAddress != 0){
+                        // 1. ptrace(SINGLESTEP)
+                        ptrace(PTRACE_SINGLESTEP, child, 0, 0);
+
+                        // 2. wait child for stopping again
+                        if (waitpid(child, &childStatus, 0) < 0) errquit("waitpid");
+
+                        // 2.a After single step might dead => load again && recover all breakpoint!!
+                        if (WIFEXITED(childStatus)){
+                            // just set stage = START && do nothing 
+                            // next round of loop will handle it automatically since childStatus is still DEAD 
+                            stage = START;
+
+                        }else if (WIFSTOPPED(childStatus)){
+                            // 2.b reset the breakpoint again
+                            resetBreakpoints(child, meetBreakpointAddress, 0);
+
+                            // 3. reset meetBreakpointAddress
+                            meetBreakpointAddress = 0;
+
+                            // 4. tracee continue
+                            ptrace(PTRACE_CONT, child, 0, 0);
+                        }else{
+                            errquit("After single step not exited or stopped");
+                        }
+
+                    }else{
+                        // Just send cont to tracee
+                        ptrace(PTRACE_CONT, child, 0, 0);
+                    }
 
                 }else if (strncmp(command, "break", INPUTSIZE) == 0 || strncmp(command, "b", INPUTSIZE) == 0){
                     // get target address
@@ -318,12 +348,48 @@ int main(int argc, char* argv[]){
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "cont", INPUTSIZE) == 0 || strncmp(command, "c", INPUTSIZE) == 0){
-                    // just keep executing
-                    ptrace(PTRACE_CONT, child, 0, 0);
+                    // 0. Check if stopped by self defined breakpoints this time
+                    if(meetBreakpointAddress != 0){
+                        // 1. ptrace(SINGLESTEP)
+                        ptrace(PTRACE_SINGLESTEP, child, 0, 0);
+
+                        // 2. wait child for stopping again
+                        if (waitpid(child, &childStatus, 0) < 0) errquit("waitpid");
+
+                        // 2.a After single step might dead => load again && recover all breakpoint!!
+                        if (WIFEXITED(childStatus)){
+                            // just set stage = START && do nothing 
+                            // next round of loop will handle it automatically since childStatus is still DEAD 
+                            stage = START;
+
+                        }else if (WIFSTOPPED(childStatus)){
+                            // 2.b reset the breakpoint again
+                            resetBreakpoints(child, meetBreakpointAddress, 0);
+
+                            // 3. reset meetBreakpointAddress
+                            meetBreakpointAddress = 0;
+
+                            // 4. tracee continue
+                            ptrace(PTRACE_CONT, child, 0, 0);
+                        }else{
+                            errquit("After single step not exited or stopped");
+                        }
+                        
+                    }else{
+                        // Just send cont to tracee
+                        ptrace(PTRACE_CONT, child, 0, 0);
+                    }
 
                 }else if (strncmp(command, "delete", INPUTSIZE) == 0){
                     char *target = strtok(NULL, delima);
                     int index = strtol(target, NULL, 10);
+
+                    // Delete may delete the meetBreakpointAddress breakpoint
+                    // => means the next time run or cont doesn't need to set again
+                    if (breakpoints.breakpointAddress[index] != 0 && meetBreakpointAddress == breakpoints.breakpointAddress[index]){
+                        meetBreakpointAddress = 0;
+                    }
+
                     rmBreakpoint(child,index);
                     stage = START; // do nothing to make tracee stop again
 
@@ -367,7 +433,7 @@ int main(int argc, char* argv[]){
                             }
 
                             // 2. call disasm to print disassemble message
-                            disasm((uint8_t *)codeBuf, codeIndex, commandAddress, lowBound, highBound);
+                            disasm((uint8_t *)codeBuf, codeIndex, commandAddress, lowBound, highBound, 10);
 
                             // 3. reset codeBuf && codeIndex
                             memset(codeBuf, 0, MAX_CHAR_PERINS * MAX_DISASM_INS * sizeof(char));
@@ -495,8 +561,44 @@ int main(int argc, char* argv[]){
                     stage = START; // do nothing to make tracee stop again
 
                 }else if (strncmp(command, "si", INPUTSIZE) == 0){
-                    // just send single step to tracee
-                    ptrace(PTRACE_SINGLESTEP, child, 0, 0);
+                    // set fromSingleStep
+                    fromSingleStep = 1;
+
+                    // 0. Check if stopped by self defined breakpoints this time
+                    if(meetBreakpointAddress != 0){
+                        // 1. ptrace(SINGLESTEP)
+                        ptrace(PTRACE_SINGLESTEP, child, 0, 0);
+
+                        // 2. wait child for stopping again
+                        if (waitpid(child, &childStatus, 0) < 0) errquit("waitpid");
+
+                        // 2.a After single step might dead => load again && recover all breakpoint!!
+                        if (WIFEXITED(childStatus)){
+                            // just set stage = START && do nothing 
+                            // next round of loop will handle it automatically since childStatus is still DEAD 
+                            stage = START;
+
+                        }else if (WIFSTOPPED(childStatus)){
+                            // 2.b reset the breakpoint again
+                            resetBreakpoints(child, meetBreakpointAddress, 0);
+
+                            // 3. reset meetBreakpointAddress
+                            meetBreakpointAddress = 0;
+
+                            // 4. since SINGLESTEP has already executed 
+                            //  #1 Can't waitpid again next loop => set stage = START to avoid waiting again
+                            stage = START;
+                            //  #2 Might meet breakpoint again => START stage will escape judging this => Do it ourselves
+                            meetBreakpointAddress = bpAndRecoverCommand(child, lowBound, highBound, &fromSingleStep);
+
+                        }else{
+                            errquit("After single step not exited or stopped");
+                        }
+                        
+                    }else{
+                        // just send SINGLESTEP to tracee
+                        ptrace(PTRACE_SINGLESTEP, child, 0, 0);
+                    }
 
                 }else{
                     fprintf(stderr, "** Invalid command at RUNNING stage: %s\n", input);
@@ -526,11 +628,17 @@ int main(int argc, char* argv[]){
                     }
                     assert(WIFSTOPPED(childStatus));
                     ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
+
+                    // 3. reset all breakpoints
+                    resetBreakpoints(child, meetBreakpointAddress, 1);
+
+                    // 4. reset fromSingleStep && meetBreakpointAddress
+                    fromSingleStep = 0;
+                    meetBreakpointAddress = 0;
+
+                    // 5. change stage to LOADED
+                    stage = LOADED;
                 }
-
-                // 3. change stage to LOADED
-                stage = LOADED;
-
             }else{
                 errquit("Not STOP or EXIT");
             }
@@ -541,6 +649,120 @@ int main(int argc, char* argv[]){
 //******************************//
 //          functions           //
 //******************************//
+void resetBreakpoints(pid_t child, unsigned long long meetBreakpointAddress, int setAll){
+    if(setAll == 0){
+        // only reset meetBreakpointAddress breakpoint
+        // 0. check if meetreakpointAddress existed
+        for (int i = 0; i < breakpoints.num; i++){
+            if(breakpoints.breakpointAddress[i] == meetBreakpointAddress){
+                // breakpoint really existed
+                // 1. before reset 0xcc => get code now
+                long code = ptrace(PTRACE_PEEKTEXT, child, meetBreakpointAddress, 0);
+
+                // 2. use ptrace to poke the corresponding memory
+                if (ptrace(PTRACE_POKETEXT, child, meetBreakpointAddress, (code & 0xffffffffffffff00) | 0xcc) != 0) errquit("poketext");
+                break;
+            }
+        }
+
+    }else if(setAll == 1){
+        // reset all breakpoints
+        for (int i = 0; i < breakpoints.num; i++){
+            // 1. before reset 0xcc => get code now
+            long code = ptrace(PTRACE_PEEKTEXT, child, breakpoints.breakpointAddress[i], 0);
+
+            // 2. use ptrace to poke the corresponding memory
+            if (ptrace(PTRACE_POKETEXT, child, breakpoints.breakpointAddress[i], (code & 0xffffffffffffff00) | 0xcc) != 0){
+                errquit("poketext");
+            }
+        }
+        
+    }else{
+        errquit("Invalid argument setAll");
+    }
+}
+unsigned long long bpAndRecoverCommand(pid_t child, unsigned long int lowBound, unsigned long int highBound, int *fromSingleStep){
+    unsigned long long meetBreakpointAddress = 0;
+    unsigned char *tmpCodeBuf = (unsigned char *)malloc(MAX_CHAR_PERINS);
+    memset(tmpCodeBuf, 0, MAX_CHAR_PERINS * sizeof(char));
+    struct user_regs_struct tmpRegs;
+
+    // Need to handle use si then meet breakpoint condition
+    if(*fromSingleStep == 1){
+        // fromSingleStep == true
+        // 0. need to check if the rip points to a breakpoint
+        if (ptrace(PTRACE_GETREGS, child, 0, &tmpRegs) == 0){
+            unsigned long long trapPosition = tmpRegs.rip;
+            for (int i = 0; i < breakpoints.num; i++){
+                if (trapPosition == breakpoints.breakpointAddress[i]){
+                    // 1. set meetBreakpointAddress && recover the command
+                    meetBreakpointAddress = trapPosition;
+
+                    // 1.1 PEEKTEXT to get the code now
+                    long code = ptrace(PTRACE_PEEKTEXT, child, trapPosition, 0);
+
+                    // 1.2 use ptrace to recover original command
+                    if (ptrace(PTRACE_POKETEXT, child, trapPosition,
+                               (code & 0xffffffffffffff00) | (breakpoints.originalCommand[i] & 0x00000000000000ff)) != 0)
+                        errquit("poketext");
+
+                    // 2. show relative message
+                    fprintf(stderr, "** breakpoint @");
+
+                    // 3. get object code
+                    long ret = ptrace(PTRACE_PEEKTEXT, child, trapPosition, 0);
+                    unsigned char *ptr = (unsigned char *)&ret;
+                    for (int j = 0; j < 8; j++){
+                        tmpCodeBuf[j] = ptr[j];
+                    }
+                    // 4 call disasm to print disassemble message
+                    disasm((uint8_t *)tmpCodeBuf, MAX_CHAR_PERINS, trapPosition, lowBound, highBound, 1);
+                    break;
+                }
+            }
+        }
+        // After handling => reset fromSingleStep => return meetBreakpointAddress
+        *fromSingleStep = 0;
+        return meetBreakpointAddress;
+    }
+
+    // 0. check if stopped by self defined breakpoint
+    if (ptrace(PTRACE_GETREGS, child, 0, &tmpRegs) == 0){
+        unsigned long long trapPosition = tmpRegs.rip - 1;
+        for (int i = 0; i < breakpoints.num; i++){
+            if (trapPosition == breakpoints.breakpointAddress[i]){
+                // Stopped due to self defined breakpoint
+                // 1. recover original command
+                // 1.1 PEEKTEXT again to get the code now
+                meetBreakpointAddress = trapPosition;
+                long code = ptrace(PTRACE_PEEKTEXT, child, trapPosition, 0);
+
+                // 1.2 use ptrace to recover original command
+                if (ptrace(PTRACE_POKETEXT, child, trapPosition,
+                           (code & 0xffffffffffffff00) | (breakpoints.originalCommand[i] & 0x00000000000000ff)) != 0)
+                    errquit("poketext");
+
+                // 2. reset rip(-=1)
+                tmpRegs.rip -= 1;
+                if (ptrace(PTRACE_SETREGS, child, 0, &tmpRegs) != 0) errquit("ptrace(SETREGS)");
+
+                // 3. show relative message
+                fprintf(stderr, "** breakpoint @");
+                // 3.1 get object code
+                long ret = ptrace(PTRACE_PEEKTEXT, child, trapPosition, 0);
+                unsigned char *ptr = (unsigned char *)&ret;
+                for (int j = 0; j < 8; j++){
+                    tmpCodeBuf[j] = ptr[j];
+                }
+                // 3.2 call disasm to print disassemble message
+                disasm((uint8_t *)tmpCodeBuf, MAX_CHAR_PERINS, trapPosition, lowBound, highBound, 1);
+                break;
+            }
+        }
+    }
+    free(tmpCodeBuf);
+    return meetBreakpointAddress;
+}
 void checkBreakpoint(){
     for(int i=0; i<breakpoints.num; i++){
         fprintf(stderr,"  %d: %llx\n", i, breakpoints.breakpointAddress[i]);
@@ -614,8 +836,8 @@ void rmBreakpoint(pid_t child, int index){
         fprintf(stderr,"** breakpoint %d does not exist\n",index);
     }
 }
-void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound){
-    int maxLines = 10;
+void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long int lowBound, unsigned long int highBound, int lines){
+    int maxLines = lines;
     csh handle;
     cs_insn *insn;
 
@@ -642,8 +864,10 @@ void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long
                 fprintf(stderr, "%s\t%s\n", insn[j].mnemonic, insn[j].op_str);
                 maxLines -- ;
 
-            }else{
+            }else if(lines != 1){
                 fprintf(stderr, "** the address is out of the range of the text segment\n");
+                break;
+            }else{
                 break;
             }
         }
