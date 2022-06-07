@@ -455,12 +455,22 @@ int main(int argc, char* argv[]){
 
                     if(target != NULL){
                         unsigned long long address = strtoll(target, NULL, 16);
+                        unsigned long long ccFinderAddress = address ;
                         for (int i = 0; i < DUMPTIMES; i++){
                             // get machine code at address
                             ret = ptrace(PTRACE_PEEKTEXT, child, address, 0);
 
                             // save machine code of int to printableASCII
                             for (int j = 0; j < 8; j++){
+                                // before saving => if there is a breakpoint at this address => change it to 0xcc
+                                for(int k=0 ; k<breakpoints.num ; k++){
+                                    if(breakpoints.breakpointAddress[k] == ccFinderAddress){
+                                        ptr[j] = 0xcc;
+                                        break;
+                                    }
+                                }
+                                ccFinderAddress++;
+
                                 printableASCII[printableIndex] = (int)ptr[j];
                                 printableIndex++;
                             }
