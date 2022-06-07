@@ -904,7 +904,7 @@ void disasm(uint8_t *code, size_t codeSize, uint64_t startAddress, unsigned long
                 fprintf(stderr, "%s\t%s\n", insn[j].mnemonic, insn[j].op_str);
                 maxLines -- ;
 
-            }else if(lines != 1){
+            }else if(lines != 1 && (insn[j].address < lowBound || insn[j].address > highBound)){
                 fprintf(stderr, "** the address is out of the range of the text segment\n");
                 break;
             }else{
