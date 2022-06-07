@@ -16,7 +16,7 @@ test: test.o
 	$(CC) $< $(CFLAGS) -l$(LIBNAME) -o $@
 
 %.o: %.c
-	$(CC) -c $< -o $@
+	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
 	rm -f $(TARGET)

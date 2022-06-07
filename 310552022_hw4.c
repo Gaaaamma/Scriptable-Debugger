@@ -83,12 +83,15 @@ int main(int argc, char* argv[]){
     int fromSingleStep = 0;
     unsigned long long meetBreakpointAddress = 0;
     breakpoints.num = 0;
-    memset(breakpoints.breakpointAddress,0,MAX_BREAKPOINT_NUM);
-    memset(breakpoints.originalCommand,0,MAX_BREAKPOINT_NUM);
+    memset(breakpoints.breakpointAddress,0,MAX_BREAKPOINT_NUM * sizeof(unsigned long long));
+    memset(breakpoints.originalCommand,0,MAX_BREAKPOINT_NUM * sizeof(long));
 
     int hasScript, hasExecutable=0;
+    int byUser = 1;
     char scriptPath[INPUTSIZE] = {};
     char executable[INPUTSIZE] = {};
+    FILE* inputStream = stdin;
+    char *scriptRead = NULL;
 
     // scriptPath && executable file path parsing
     if(argc > 1){
@@ -110,6 +113,13 @@ int main(int argc, char* argv[]){
     }
     fprintf(stderr, "** scriptPath: %s\n", scriptPath);
     fprintf(stderr, "** executable file: %s\n", executable);
+    
+    // if hasScript 
+    if(hasScript){
+        // getInput from script
+        inputStream = fopen(scriptPath,"r") ; 
+        byUser = 0;
+    }
 
     // if hasExecutable -> load exe first 
     if(hasExecutable){
@@ -165,8 +175,15 @@ int main(int argc, char* argv[]){
     // NOTLOADED stage 
     while(stage == NOTLOADED){
         char input[INPUTSIZE] = {};
-        fprintf(stderr,"sdb> ");
-        fgets(input,INPUTSIZE,stdin);
+        if(byUser == 1){
+            fprintf(stderr,"sdb> ");
+        }
+        scriptRead = fgets(input,INPUTSIZE,inputStream);
+        if(scriptRead == NULL){
+             // scriptEnd
+             return 0;
+        }
+
         char *command = strtok(input, delima);
 
         // Parsing
@@ -242,8 +259,14 @@ int main(int argc, char* argv[]){
         // LOADED stage
         while (stage == LOADED){
             char input[INPUTSIZE] = {};
-            fprintf(stderr,"sdb> ");
-            fgets(input,INPUTSIZE,stdin);
+            if (byUser == 1){
+                fprintf(stderr, "sdb> ");
+            }
+            scriptRead = fgets(input,INPUTSIZE,inputStream);
+            if(scriptRead == NULL){
+                // scriptEnd
+                return 0;
+            }
             char *command = strtok(input, delima);
 
             // Parsing
@@ -287,8 +310,14 @@ int main(int argc, char* argv[]){
             if(WIFSTOPPED(childStatus)){
                 // child process is stopped -> We can send our command to child process
                 char input[INPUTSIZE] = {};
-                fprintf(stderr, "sdb> ");
-                fgets(input, INPUTSIZE, stdin);
+                if (byUser == 1){
+                    fprintf(stderr, "sdb> ");
+                }
+                scriptRead = fgets(input, INPUTSIZE, inputStream);
+                if (scriptRead == NULL){
+                    // scriptEnd
+                    return 0;
+                }
                 char *command = strtok(input, delima);
                 struct user_regs_struct regs;
 
@@ -619,7 +648,7 @@ int main(int argc, char* argv[]){
             }else if(WIFEXITED(childStatus)){
                 // process is finished
                 // 1. print message
-                fprintf(stderr, "child process %d terminiated normally (code %d)\n", child, childStatus);
+                fprintf(stderr, "** child process %d terminiated normally (code %d)\n", child, childStatus);
 
                 // 2. reload process
                 if ((child = fork()) < 0){
