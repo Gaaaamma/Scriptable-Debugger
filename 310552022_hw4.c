@@ -257,6 +257,7 @@ int main(int argc, char* argv[]){
                 checkBreakpoint();
 
             }else if(strncmp(command,"run",INPUTSIZE) == 0 || strncmp(command,"r",INPUTSIZE) ==0){
+                fprintf(stderr, "** pid %d\n", child);
                 ptrace(PTRACE_CONT, child, 0, 0);
                 stage = RUNNING;
             }else if(strncmp(command,"start",INPUTSIZE) == 0){
